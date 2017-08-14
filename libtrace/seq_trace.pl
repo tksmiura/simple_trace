@@ -5,7 +5,7 @@
 @end = ();
 @fid = ();
 @func = ();
-# read map.txt for MAC OS X(CLang)
+# read map.txt for MAC OS X(CLang) or gcc-7 (Homebrew GCC 7.1.0) 
 open(MAP, "<", "map.txt") || die "Can't open map file";
 while ($line = <MAP>) {
     #[  0] linker synthesized
@@ -25,11 +25,6 @@ while ($line = <MAP>) {
 }
 close(MAP);
 
-#open(TRACE, "<", "trace.txt") || die "Can't open trace file";
-#TRACE=STDIN;
-#open(OUT, ">", "sequence.txt") || die "Can't open sequence file";
-#OUT=STDOUT;
-
 if ($ARGV[0]) {
     $dest_file = $ARGV[0];
 } else {
@@ -39,31 +34,31 @@ if ($ARGV[0]) {
 print STDOUT "\@startuml $dest_file\n";
 print STDOUT "hide footbox\n\n";
 while ($line = <STDIN>) {
-    #offset __cyg_profile_func_enter = 10eac2e60
     if ($line =~ /offset\s+([_a-zA-Z0-9]+)\s*\=\s*([0-9A-Fa-f]+)/) {
         my ($base_func) = $1;
         my ($base_func_addr) = hex($2);
         my ($i);
         for($i = 0; $i < $#func; $i++) {
             if ($func[$i] eq $base_func) {
-#                print "debug " . sprintf("%x %x\n", $base_func_addr, $start[$i]);
                 $offset = $base_func_addr - $start[$i];
                 last;
             }
         }
-#        print sprintf("base $base_func %x\n", $offset);
     } elsif ($line =~ /in\s+([0-9A-Fa-f]+)\s+\-\>\s+([0-9A-Fa-f]+)/) { 
         my ($cf, $cm) = &func(hex($1) - $offset);
         my ($f, $m) = &func(hex($2) - $offset);
+        if ($delay_out) {
+            print STDOUT $delay_out;
+            $delay_out = 0;
+        }
         if ($cm ne "unknown" && $m ne "unknown") {
             print STDOUT "$cm -> $m : $f\n";
-            print STDOUT "activate $m\n";
-#            print sprintf("in $f(%x)\n", hex($2) - $offset);
+            $delay_out = "activate $m\n";
         } elsif ($cm ne "unknown" && $m eq "unknown") {
             print STDOUT "$cm ->] : $f\n";
         } elsif ($cm eq "unknown" && $m ne "unknown") {
             print STDOUT "[-> $m : $f\n";
-            print STDOUT "activate $m\n";
+            $delay_out = "activate $m\n";
         } else {
             # no output
         }
@@ -72,7 +67,9 @@ while ($line = <STDIN>) {
         my ($f, $m) = &func(hex($2) - $offset);
         if ($cm ne $m) {
             if ($cm ne "unknown" && $m ne "unknown") {
-                print STDOUT "$cm <-- $m\n";
+                if (! $delay_out) {                    
+                    print STDOUT "$cm <-- $m\n";
+                }
             } elsif ($cm ne "unknown" && $m eq "unknown") {
                 print STDOUT "$cm <--]\n";
             } elsif ($cm eq "unknown" && $m ne "unknown") {
@@ -81,7 +78,33 @@ while ($line = <STDIN>) {
                 # no output
             }
         }
-        print STDOUT "deactivate $m\n";
+        if (! $delay_out) {
+            print STDOUT "deactivate $m\n";
+        }
+        $delay_out = 0;
+    } elsif ($line =~ /EVENT\s*([^\s]+)\s+\-\>\>\s*([^\:]*)\s*\:(.*)$/) {
+        my $from, $to, $c;
+        $from = $1;
+        $to = $2;
+        $c = $3;
+        $from =~ s/.c$//;
+        $to =~ s/.c$//;
+        
+        if ($delay_out) {
+            print STDOUT $delay_out;
+            $delay_out = 0;
+        }
+        print STDOUT "$from ->> $to : $c\n";
+    } elsif ($line =~ /NOTE\s*([^\:]+)\:(.*)$/) {
+        my $m, $c;
+        $m = $1;
+        $c = $2;
+        $m =~ s/.c$//;
+        if ($delay_out) {
+            print STDOUT $delay_out;
+            $delay_out = 0;
+        }
+        print STDOUT "rnote over $m\n$c\nendrnote\n";
     }
 }
 
@@ -97,11 +120,10 @@ sub func {
     my ($m) = "unknown";
     my ($f) = sprintf("(%x)", $addr);
     for($i = 0; $i < $#func; $i++) {
-        #print "$i $addr $start[$i] $end[$i]\n";
         if ($addr >= $start[$i] && $addr < $end[$i]) {
             $f = $func[$i];
             $m = $file_map{$fid[$i]};
-            $m =~ s/.trace_o//;
+            $m =~ s/\.trace_o$//;
             last;
         }
     }

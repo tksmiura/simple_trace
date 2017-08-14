@@ -13,6 +13,7 @@
 # - 'make trace'
 #    execute program and make trace
 
+
 #TARGETS
 PROGRAM = main
 DEBUG_TARGET = main_debug
@@ -22,15 +23,23 @@ SRCS = main.c sub.c
 TEST_SRCS = $(wildcard ut_*.c)
 TESTS = $(basename $(TEST_SRCS)) 
 GCOV_TESTS = $(TEST_SRCS:.c=_gcov)
+PIC ?= 'SVG'
+TRACE_OUT ?= main_trace 
 
 # ENVIRONMENT
-CC ?= gcc
+CC ?= gcc   # on macos gcc=clang
+#CC ?= gcc-7  # homebrew gcc ver.7
 CFLAGS ?= -Wall -O2
 DEBUG_OPTION ?= -O0 -g
-TRACE_OPTION ?= -fPIC -finstrument-functions
+TRACE_OPTION ?= -fPIC -finstrument-functions -D__TRACE_ON__
 DEBUGGER ?= gdb -tui
 GCOV ?= gcov
-PLANTUML ?= plantuml -tpng
+PLANTUML ?= plantuml
+ifeq ($(PIC), 'SVG') 
+PLANTUML_OPT ?= -tsvg
+else
+PLANTUML_OPT ?= -tpng
+endif
 
 # suffixes
 .SUFFIXES: .c .o .debug_o .trace_o
@@ -127,8 +136,8 @@ $(TRACE_TARGET): $(SRCS:.c=.trace_o) libtrace/libsimpletrace.o
 
 .PHONY: trace
 trace: $(TRACE_TARGET)
-	./$^ | libtrace/seq_trace.pl main_trace.png > main_trace.uml
-	$(PLANTUML) main_trace.uml
+	./$^ | libtrace/seq_trace.pl $(TRACE_OUT) > main_trace.uml
+	$(PLANTUML) $(PLANTUML_OPT) main_trace.uml
 
 #
 # clean
@@ -140,4 +149,4 @@ clean:
 	$(RM) $(SRCS:.c=.o) $(SRCS:.c=.debug_o) $(SRCS:.c=.trace_o)
 	$(RM) libtrace/libsimpletrace.o
 	$(RM) *.gcda *.gcno *.gcov 
-	$(RM) map.txt *.uml *.png
+	$(RM) map.txt *.uml *.svg *.png
